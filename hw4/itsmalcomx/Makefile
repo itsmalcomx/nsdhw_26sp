@@ -1,35 +1,31 @@
 CXX      := g++
 PYTHON   := python3
 
-
 PY_INC   := $(shell $(PYTHON) -c "import pybind11; print(pybind11.get_include())" 2>/dev/null || echo "/usr/include/pybind11")
-PY_FLAGS := $(shell $(PYTHON)-config --includes --ldflags)
+PY_FLAGS := $(shell $(PYTHON)-config --includes)
+PY_LDFLAGS := $(shell $(PYTHON)-config --ldflags --embed 2>/dev/null || $(PYTHON)-config --ldflags)
 
-
+# Check for MKL environment
 ifneq ($(or $(PRELOAD_MKL),$(wildcard PRELOAD_MKL)),)
   BLAS_INC  := /usr/include/mkl
   BLAS_LIB  := -Wl,--no-as-needed -lmkl_rt -Wl,--as-needed
 else
-  OPENBLAS_REAL := $(shell readlink -f /usr/lib/x86_64-linux-gnu/libopenblas.so 2>/dev/null)
-  OPENBLAS_DIR  := $(shell dirname $(OPENBLAS_REAL))
   BLAS_INC  := /usr/include/x86_64-linux-gnu
-  BLAS_LIB  := -L$(OPENBLAS_DIR) -Wl,--no-as-needed -lopenblas -Wl,--as-needed \
-               -Wl,-rpath,$(OPENBLAS_DIR)
+  BLAS_LIB  := -lopenblas
 endif
 
 EXT_SUFFIX := $(shell $(PYTHON)-config --extension-suffix)
 TARGET     := _matrix$(EXT_SUFFIX)
 
-CXXFLAGS := -O3 -march=native -std=c++17 -fPIC \
-            -I$(PY_INC) -I$(BLAS_INC)
-LDFLAGS  := $(BLAS_LIB) -shared
+CXXFLAGS := -O3 -march=native -std=c++17 -fPIC -I$(PY_INC) -I$(BLAS_INC)
+LDFLAGS  := -shared $(PY_LDFLAGS) $(BLAS_LIB)
 
 .PHONY: all test clean
 
 all: $(TARGET)
 
 $(TARGET): matrix.cpp
-	$(CXX) $(CXXFLAGS) $(PY_FLAGS) $(LDFLAGS) -o $@ $<
+	$(CXX) $(CXXFLAGS) $(PY_FLAGS) $< $(LDFLAGS) -o $@
 
 test: $(TARGET)
 	$(PYTHON) -m pytest test_matrix.py -v
